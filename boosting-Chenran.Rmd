@@ -1,0 +1,136 @@
+## setup
+```{r}
+library(readr)
+options(stringsAsFactors = FALSE)
+options(digits=3)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(dummies)    
+library(philentropy)   
+library(skimr)     
+library(cluster)   
+library(factoextra)    
+library(dendextend)     
+library(devtools)    
+library(dplyr)
+library(purrr)
+library(tidyverse)
+library(factoextra)
+library(skimr)
+library(corrplot)
+library(cluster)
+library(factoextra)
+library(gbm)
+library(MLmetrics)
+```
+
+
+```{r}
+# read train data
+data = read.csv("~/Downloads/mobile-price-classification 2/train.csv")
+skimr::skim(data)
+data = data %>% select(-price_range)
+stats_z = scale(data)
+
+stats_de = dist(stats_z)
+stats_dm = dist(stats_z, method="manhattan")
+
+clust1 = hclust(stats_de)
+clust2 = hclust(stats_dm)
+
+plot(clust1)
+plot(clust2)
+
+sapply(2:10,function(x) table(cutree(clust2,k=x)))
+
+data$cluster = cutree(clust2, k=4)
+
+# after take off variables
+data %>% select(-int_memory,-ram,-px_width,-px_height)
+```
+
+
+
+##boosting without selected variables
+```{r}
+SAMP = sample(1:nrow(data), 2000*0.8)
+train1 = data[SAMP, ]
+train2 = data[-SAMP, ]
+prange_train2 = data$price_range[-SAMP]
+
+f1<- as.formula(cluster ~
+battery_power+blue+clock_speed+dual_sim+fc+four_g+m_dep+mobile_wt+pc+sc_h+sc_w+wifi+int_memory+ram+px_width+px_height+int_memory+ram+px_width+px_height)
+
+boosting3 = gbm(f1,
+               data = train1,
+               distribution = "gaussian",
+               n.trees = 130,
+               interaction.depth = 4,
+               cv.folds = 10,
+               shrinkage = 0.1)
+
+preds1 = predict(boosting3, train2)
+preds1 = preds1-1
+preds1=lapply(preds1,round,0)
+preds1 = as.double(preds1)
+btab = table(preds1, prange_train2)
+
+yardstick::accuracy(btab)
+```
+
+##boosting with all variables
+```{r}
+f2<- as.formula(cluster ~ battery_power+blue+clock_speed+dual_sim+fc+four_g+m_dep+mobile_wt+pc+sc_h+sc_w+wifi+int_memory+ram+px_width+px_height+n_cores+talk_time+three_g+touch_screen+int_memory+ram+px_width+px_height)
+
+boosting4 = gbm(f2,
+               data = train1,
+               distribution = "gaussian",
+               n.trees = 130,
+               interaction.depth = 4,
+               cv.folds = 10,
+               shrinkage = 0.1)
+
+preds2 = predict(boosting4, train2)
+preds2 = preds2-1
+preds2=lapply(preds2,round,0)
+preds2 = as.double(preds2)
+btab2 = table(preds2, prange_train2)
+
+yardstick::accuracy(btab2)
+```
+
+
+```{r}
+test = read_csv("~/Downloads/mobile-price-classification 2/test.csv")
+test1 = test %>% select(-id,-int_memory,-ram,-px_width,-px_height)
+```
+
+##apply (seperate model)
+```{r}
+preds1 = predict(boosting1,newdata = test1)
+preds1 <- lapply(preds1,round,0)
+class(preds1)
+
+final_test1 = as.data.frame(test1) %>%
+  mutate(id=test$id) %>% 
+  mutate(prince_range = preds1)
+
+View(final_test1)
+```
+
+##apply (whole model)
+```{r}
+preds2 = predict(boosting2,newdata = test1)
+preds2 <- lapply(preds2,round,0)
+class(preds2)
+
+final_test2 = as.data.frame(test1) %>%
+  mutate(id=test$id) %>% 
+  mutate(prince_range = preds2)
+
+View(final_test2)
+```
+
+
+
